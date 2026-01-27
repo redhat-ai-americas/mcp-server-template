@@ -514,6 +514,72 @@ fips-agents patch core  # Shows diffs, you decide what to apply
 
 The `.template-info` file tracks which template version your project was created from, enabling smart updates.
 
+## Transport Architecture
+
+MCP supports multiple transport protocols. **The server defines which transport to expose**—clients must connect using the matching transport type.
+
+### How It Works
+
+The `MCP_TRANSPORT` environment variable controls which transport the server runs:
+
+| Transport | Use Case | Client Connection |
+|-----------|----------|-------------------|
+| `stdio` | Local development, CLI tools like `cmcp` | Spawns server as subprocess |
+| `http` | Remote access, OpenShift deployment | HTTP request to `http://host:port/mcp/` |
+
+The same codebase supports both transports. The server reads `MCP_TRANSPORT` at startup and exposes only that transport—there's no negotiation or auto-detection.
+
+### Local Development (STDIO)
+
+```bash
+# Server runs in STDIO mode (default)
+MCP_TRANSPORT=stdio .venv/bin/python -m src.main
+
+# Client spawns the server as a subprocess
+cmcp ".venv/bin/python -m src.main" tools/list
+```
+
+STDIO is ideal for local testing because the client manages the server lifecycle directly.
+
+### Remote Deployment (HTTP)
+
+```bash
+# Server runs in HTTP mode
+MCP_TRANSPORT=http MCP_HTTP_HOST=0.0.0.0 MCP_HTTP_PORT=8080 python -m src.main
+
+# Client connects via HTTP
+# (configure your MCP client to use the HTTP endpoint)
+```
+
+In OpenShift, the Containerfile sets `MCP_TRANSPORT=http` automatically. The Route exposes the `/mcp/` endpoint with TLS termination.
+
+### Client Configuration
+
+Your MCP client configuration must specify the correct transport:
+
+**For STDIO (local):**
+```json
+{
+  "mcpServers": {
+    "my-server": {
+      "command": ".venv/bin/python",
+      "args": ["-m", "src.main"]
+    }
+  }
+}
+```
+
+**For HTTP (remote):**
+```json
+{
+  "mcpServers": {
+    "my-server": {
+      "url": "https://my-server-route.apps.cluster.example.com/mcp/"
+    }
+  }
+}
+```
+
 ## Environment Variables
 
 ### Local Development
@@ -521,7 +587,7 @@ The `.template-info` file tracks which template version your project was created
 - `MCP_HOT_RELOAD=1` - Enable hot-reload
 
 ### OpenShift Deployment
-- `MCP_TRANSPORT=http` - Use HTTP transport (set automatically)
+- `MCP_TRANSPORT=http` - Use HTTP transport (set in Containerfile)
 - `MCP_HTTP_HOST=0.0.0.0` - HTTP server host
 - `MCP_HTTP_PORT=8080` - HTTP server port
 - `MCP_HTTP_PATH=/mcp/` - HTTP endpoint path
