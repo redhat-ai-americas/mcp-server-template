@@ -3,9 +3,6 @@
 import pytest
 from src.resources.{{ module_path }} import {{ component_name }}
 
-# Access the underlying function for testing (FastMCP decorator pattern)
-{{ component_name }}_fn = {{ component_name }}.fn
-
 
 {% if async %}@pytest.mark.asyncio
 async def test_{{ component_name }}_returns_content():
@@ -13,8 +10,8 @@ async def test_{{ component_name }}_returns_content():
 {% endif %}    """Test {{ component_name }} returns content."""
 {% if params|length > 0 %}    # TODO: Provide actual parameter values
 {% for param in params %}    {{ param.name }} = "test_{{ param.name }}"  # Replace with actual test value
-{% endfor %}    result = {% if async %}await {% endif %}{{ component_name }}_fn({% for param in params %}{{ param.name }}{% if not loop.last %}, {% endif %}{% endfor %})
-{% else %}    result = {% if async %}await {% endif %}{{ component_name }}_fn()
+{% endfor %}    result = {% if async %}await {% endif %}{{ component_name }}({% for param in params %}{{ param.name }}{% if not loop.last %}, {% endif %}{% endfor %})
+{% else %}    result = {% if async %}await {% endif %}{{ component_name }}()
 {% endif %}
 
     # TODO: Add specific assertions
@@ -34,8 +31,8 @@ async def test_{{ component_name }}_content_structure():
 {% endif %}    """Test {{ component_name }} content structure."""
 {% if params|length > 0 %}    # TODO: Provide actual parameter values
 {% for param in params %}    {{ param.name }} = "test_{{ param.name }}"  # Replace with actual test value
-{% endfor %}    result = {% if async %}await {% endif %}{{ component_name }}_fn({% for param in params %}{{ param.name }}{% if not loop.last %}, {% endif %}{% endfor %})
-{% else %}    result = {% if async %}await {% endif %}{{ component_name }}_fn()
+{% endfor %}    result = {% if async %}await {% endif %}{{ component_name }}({% for param in params %}{{ param.name }}{% if not loop.last %}, {% endif %}{% endfor %})
+{% else %}    result = {% if async %}await {% endif %}{{ component_name }}()
 {% endif %}
 
     # TODO: Test content structure

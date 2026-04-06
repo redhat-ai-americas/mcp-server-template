@@ -11,21 +11,21 @@ from fastmcp import Context
 from fastmcp import Context
 {% endif %}
 {% if with_auth %}
-from src.core.auth import requires_scopes
+from fastmcp.server.auth import require_scopes
 {% endif %}
 from fastmcp.exceptions import ToolError
-from src.core.app import mcp
+from fastmcp.tools import tool
 
 
-@mcp.tool(
+@tool(
     annotations={
         "readOnlyHint": {{ read_only|default(True) }},
         "idempotentHint": {{ idempotent|default(True) }},
         "openWorldHint": {{ open_world|default(False) }},
-    }
-)
-{% if with_auth %}@requires_scopes({{ required_scopes|default('["read:data"]')|tojson }})
-{% endif %}{% if async %}async {% endif %}def {{ component_name }}(
+    },
+{% if with_auth %}    auth=require_scopes({% for scope in required_scopes|default(["read:data"]) %}"{{ scope }}"{% if not loop.last %}, {% endif %}{% endfor %}),
+{% endif %})
+{% if async %}async {% endif %}def {{ component_name }}(
 {% if params|length > 0 %}{% for param in params %}    {{ param.name }}: Annotated[{{ param.type }}, Field(description="{{ param.description }}"{% if param.min_length %}, min_length={{ param.min_length }}{% endif %}{% if param.max_length %}, max_length={{ param.max_length }}{% endif %})],
 {% endfor %}{% endif %}{% if with_context %}    ctx: Context = None,
 {% endif %}) -> {{ return_type|default('str') }}:

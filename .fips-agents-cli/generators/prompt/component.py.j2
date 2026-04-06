@@ -2,37 +2,34 @@
 
 from pydantic import Field
 {% if needs_prompt_imports -%}
-from fastmcp.prompts.prompt import Message, PromptMessage, PromptResult, TextContent
+from fastmcp.prompts import Message
 {% endif -%}
 {% if with_context -%}
 from fastmcp import Context
 {% endif -%}
-from src.core.app import mcp
+from fastmcp.prompts import prompt
 
 
-{% if prompt_name or title or tags or not enabled or meta -%}
-@mcp.prompt(
+{% if prompt_name or title or tags or meta -%}
+@prompt(
 {%- if prompt_name %}
     name="{{ prompt_name }}",
 {%- endif %}
 {%- if title %}
     title="{{ title }}",
 {%- endif %}
-{%- if description and (prompt_name or title or tags or not enabled or meta) %}
+{%- if description and (prompt_name or title or tags or meta) %}
     description="{{ description }}",
 {%- endif %}
 {%- if tags %}
     tags={{ '{' }}{% for tag in tags %}"{{ tag }}"{% if not loop.last %}, {% endif %}{% endfor %}{{ '}' }},
-{%- endif %}
-{%- if not enabled %}
-    enabled=False,
 {%- endif %}
 {%- if meta %}
     meta={{ meta }},
 {%- endif %}
 )
 {% else -%}
-@mcp.prompt
+@prompt
 {% endif -%}
 {% if async %}async {% endif %}def {{ component_name }}(
 {% if with_context %}    ctx: Context,
@@ -69,7 +66,7 @@ Return as JSON:
 # Provide clear, structured guidance for the LLM
 {%- endif %}"""
 
-{% elif return_type == "PromptMessage" %}
+{% elif return_type == "Message" %}
     content = f"""{{ prompt_instruction|default('Analyze and process the following:') }}
 
 {% for param in params %}{% if not param.get('optional', False) %}<{{ param.name }}>
@@ -87,12 +84,9 @@ Return as JSON:
 # TODO: Add specific prompt instructions
 {%- endif %}"""
 
-    return PromptMessage(
-        role="user",
-        content=TextContent(type="text", text=content)
-    )
+    return Message(content)
 
-{% elif return_type == "PromptResult" or return_type == "list[PromptMessage]" %}
+{% elif return_type == "list[Message]" %}
     # Generate a multi-message conversation
     messages = [
         Message(f"""{{ prompt_instruction|default('Analyze and process the following:') }}

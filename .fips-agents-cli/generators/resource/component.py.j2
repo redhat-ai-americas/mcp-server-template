@@ -1,9 +1,9 @@
 """{{ description }}"""
 
-from src.core.app import mcp
+from fastmcp.resources import resource
 
 
-@mcp.resource("{{ uri|default('resource://' + component_name) }}")
+@resource("{{ uri|default('resource://' + component_name) }}")
 {% if async %}async {% endif %}def {{ component_name }}({% if params|length > 0 %}
 {% for param in params %}    {{ param.name }}: {{ param.type_hint }}{% if not loop.last %},
 {% endif %}{% endfor %}

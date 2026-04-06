@@ -3,14 +3,11 @@
 import pytest
 from src.prompts.{{ module_path }} import {{ component_name }}
 
-# Access the underlying function for testing (FastMCP decorator pattern)
-{{ component_name }}_fn = {{ component_name }}.fn
-
 
 def test_{{ component_name }}_basic():
     """Test basic {{ component_name }} prompt generation."""
     # TODO: Add test parameters
-    result = {{ component_name }}_fn(
+    result = {{ component_name }}(
         # Add parameters here
     )
 
@@ -24,7 +21,7 @@ def test_{{ component_name }}_basic():
 
 {% if params|length > 0 %}{% if params|selectattr('optional')|list|length > 0 %}def test_{{ component_name }}_with_optional_params():
     """Test {{ component_name }} with optional parameters."""
-    result = {{ component_name }}_fn(
+    result = {{ component_name }}(
         # Add required parameters
 {% for param in params %}{% if param.optional %}        {{ param.name }}={{ param.example|default('None') }},
 {% endif %}{% endfor %}    )
@@ -36,7 +33,7 @@ def test_{{ component_name }}_basic():
 
 def test_{{ component_name }}_without_optional_params():
     """Test {{ component_name }} without optional parameters."""
-    result = {{ component_name }}_fn(
+    result = {{ component_name }}(
         # Add only required parameters
     )
 
@@ -48,7 +45,7 @@ def test_{{ component_name }}_without_optional_params():
 
 {% if with_schema %}def test_{{ component_name }}_includes_schema():
     """Test {{ component_name }} includes JSON schema."""
-    result = {{ component_name }}_fn(
+    result = {{ component_name }}(
         # Add parameters
     )
 
