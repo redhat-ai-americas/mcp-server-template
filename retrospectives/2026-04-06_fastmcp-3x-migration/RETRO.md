@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-06
 **Effort:** Migrate MCP server template from FastMCP 2.x to 3.x
-**Commits:** all on `fastmcp-3x-upgrade` branch (not yet merged)
+**Commits:** `617c57f` (main migration), `6f645c0` (generator templates)
 
 ## What We Set Out To Do
 
@@ -38,14 +38,14 @@
 |-----|----------|------------|
 | No end-to-end server startup test | Follow-up | [#4](https://github.com/redhat-ai-americas/mcp-server-template/issues/4) |
 | Auth pipeline untested with real JWT tokens | Follow-up | [#5](https://github.com/redhat-ai-americas/mcp-server-template/issues/5) |
-| `fips-agents generate` may still emit v2.x scaffolds | Follow-up | [#6](https://github.com/redhat-ai-americas/mcp-server-template/issues/6) |
+| `fips-agents generate` may still emit v2.x scaffolds | Fixed | [#6](https://github.com/redhat-ai-americas/mcp-server-template/issues/6) — fixed in `6f645c0` + CLI `0dc642f` |
 | No container build verification | Accept | Containerfile unchanged; low risk |
 
 ## Action Items
 
 - [x] Fix `remove_examples.sh` dead code
 - [x] File follow-up issues (#4, #5, #6)
-- [ ] Commit, PR to main, merge
+- [x] Commit, PR to main, merge (PR #7)
 
 ## Patterns
 
