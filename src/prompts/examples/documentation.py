@@ -7,11 +7,10 @@ API docs, code comments, README files, and technical documentation.
 
 from typing import Annotated
 from pydantic import Field
+from fastmcp.prompts import prompt
 
-from ...core.app import mcp
 
-
-@mcp.prompt()
+@prompt()
 def generate_docstring(
     code: Annotated[
         str,
@@ -57,7 +56,7 @@ Include:
 Return only the docstring text, properly formatted."""
 
 
-@mcp.prompt()
+@prompt()
 def generate_readme(
     project_name: Annotated[
         str,
@@ -110,7 +109,7 @@ The README should include:
 Use markdown formatting and make it professional yet approachable."""
 
 
-@mcp.prompt()
+@prompt()
 def explain_code(
     code: Annotated[
         str,
@@ -161,7 +160,7 @@ Provide:
 5. Suggestions for improvement (if any)"""
 
 
-@mcp.prompt()
+@prompt()
 def generate_api_docs(
     endpoint_code: Annotated[
         str,

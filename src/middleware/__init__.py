@@ -1,20 +1,20 @@
 """
 Middleware package for the MCP server.
 
-Middleware modules are automatically discovered and loaded by src/core/loaders.py.
+FastMCP 3.x provides built-in middleware (e.g., LoggingMiddleware) and supports
+custom middleware classes for cross-cutting concerns like authentication, rate
+limiting, etc.
 
-Middleware classes wrap MCP operations to add cross-cutting concerns like logging,
-authentication, rate limiting, etc.
-
-Middleware should inherit from fastmcp.server.middleware.Middleware and override
-specific hook methods (on_call_tool, on_request, etc.).
+Custom middleware should inherit from fastmcp.server.middleware.Middleware and
+override specific hook methods (on_call_tool, on_request, etc.).
 
 To add new middleware:
 1. Create a new .py file in this directory
 2. Import Middleware: from fastmcp.server.middleware import Middleware
 3. Define your middleware class inheriting from Middleware
-4. The loader will automatically discover and register it
+4. Add an instance to the middleware=[] list in create_server() (src/core/server.py)
 
 To remove middleware:
-1. Simply delete the .py file
+1. Delete the .py file
+2. Remove the instance from the middleware=[] list in create_server()
 """

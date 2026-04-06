@@ -7,11 +7,10 @@ into more specific categories.
 
 from typing import Annotated, Literal
 from pydantic import Field
+from fastmcp.prompts import prompt
 
-from ...core.app import mcp
 
-
-@mcp.prompt()
+@prompt()
 def translate_text(
     text: Annotated[
         str,
@@ -60,7 +59,7 @@ Return as JSON:
 }}"""
 
 
-@mcp.prompt()
+@prompt()
 def proofread_text(
     text: Annotated[
         str,
@@ -113,7 +112,7 @@ Return as JSON:
 }}"""
 
 
-@mcp.prompt()
+@prompt()
 def compare_texts(
     text1: Annotated[
         str,
@@ -176,7 +175,7 @@ Return as JSON:
 }}"""
 
 
-@mcp.prompt()
+@prompt()
 def generate_title(
     content: Annotated[
         str,

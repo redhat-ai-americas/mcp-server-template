@@ -1,14 +1,14 @@
 """
 Resources package for the MCP server.
 
-Resource modules are automatically discovered and loaded by src/core/loaders.py.
+Resource modules are automatically discovered by FileSystemProvider at startup.
 
 To add a new resource:
 1. Create a new .py file in this directory or any subdirectory
    Example: resources/country_profiles/japan.py
-2. Import mcp from core.app: from core.app import mcp
-3. Define your resource function with @mcp.resource() decorator
-4. The loader will automatically discover and import it
+2. Import the standalone decorator: from fastmcp.resources import resource
+3. Define your resource function with @resource("uri://...") decorator
+4. FileSystemProvider will automatically discover and register it
 
 To remove a resource:
 1. Simply delete the .py file

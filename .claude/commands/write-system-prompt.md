@@ -124,9 +124,12 @@ After creating `SYSTEM_PROMPT.md`:
 
 When reading tool files, look for these patterns:
 
-### FastMCP Tool Decorator
+### FastMCP 3.x Standalone Tool Decorator
 ```python
-@mcp.tool
+from fastmcp.tools import tool
+from fastmcp import Context
+
+@tool
 async def tool_name(
     param: Annotated[str, Field(description="...")],
     ctx: Context = None,

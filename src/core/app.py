@@ -1,16 +1,10 @@
-import os
-from fastmcp import FastMCP
-from .logging import get_logger
+"""Shared MCP server instance.
 
-APP_NAME = os.getenv("MCP_SERVER_NAME", "fastmcp-unified")
-mcp = FastMCP(APP_NAME)
-logger = get_logger("server")
+In FastMCP 3.x, components use standalone decorators (@tool, @resource, @prompt)
+and are discovered by FileSystemProvider. This module provides create_server()
+for cases where direct access to the FastMCP instance is needed (e.g., tests).
+"""
 
-# Import prompts module to trigger decorator registration
-# This must happen after mcp is created but before the server runs
-try:
-    import src.prompts  # noqa: F401
+from src.core.server import create_server
 
-    logger.debug("Prompts module imported for decorator registration")
-except ImportError:
-    logger.warning("Failed to import prompts module - prompts may not be available")
+__all__ = ["create_server"]

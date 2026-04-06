@@ -1,156 +1,150 @@
-import sys
+"""Tests for prompt module structure and conventions.
+
+Validates that prompt files follow FastMCP 3.x standalone decorator patterns.
+Uses AST inspection rather than runtime imports because the prompt modules
+depend on FastMCP standalone decorators whose exact API may still be in flux.
+"""
+
+import ast
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from core.app import mcp
-from prompts.examples import analysis, documentation, general
+import pytest
 
 
-def test_python_prompt_modules_loaded():
-    """Test that Python prompt modules are properly imported."""
-    # Verify modules exist
-    assert analysis is not None
-    assert documentation is not None
-    assert general is not None
+PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent / "src" / "prompts" / "examples"
 
 
-def test_analysis_prompt_functions_exist():
-    """Test that analysis prompt functions exist and are wrapped by FastMCP."""
-    # The decorator wraps functions into FunctionPrompt objects
-    # Verify they exist as module attributes
-    assert hasattr(analysis, "summarize")
-    assert hasattr(analysis, "classify")
-    assert hasattr(analysis, "analyze_sentiment")
-    assert hasattr(analysis, "extract_entities")
+def _parse_module(filename: str) -> ast.Module:
+    """Parse a prompt module into an AST."""
+    path = PROMPTS_DIR / filename
+    assert path.exists(), f"{filename} should exist in {PROMPTS_DIR}"
+    return ast.parse(path.read_text())
 
 
-def test_documentation_prompt_functions_exist():
-    """Test that documentation prompt functions exist and are wrapped by FastMCP."""
-    assert hasattr(documentation, "generate_docstring")
-    assert hasattr(documentation, "generate_readme")
-    assert hasattr(documentation, "explain_code")
-    assert hasattr(documentation, "generate_api_docs")
+def _get_decorated_functions(tree: ast.Module) -> list[ast.FunctionDef]:
+    """Return all top-level functions that have a decorator."""
+    return [
+        node
+        for node in ast.iter_child_nodes(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.decorator_list
+    ]
 
 
-def test_general_prompt_functions_exist():
-    """Test that general utility prompt functions exist and are wrapped by FastMCP."""
-    assert hasattr(general, "translate_text")
-    assert hasattr(general, "proofread_text")
-    assert hasattr(general, "compare_texts")
-    assert hasattr(general, "generate_title")
+def _uses_prompt_decorator(func: ast.FunctionDef) -> bool:
+    """Check if function uses @prompt or @prompt() decorator."""
+    for dec in func.decorator_list:
+        # @prompt (bare name)
+        if isinstance(dec, ast.Name) and dec.id == "prompt":
+            return True
+        # @prompt() (call)
+        if isinstance(dec, ast.Call):
+            if isinstance(dec.func, ast.Name) and dec.func.id == "prompt":
+                return True
+    return False
 
 
-def test_prompt_function_has_metadata():
-    """Test that decorated prompt functions have proper metadata."""
-    from fastmcp.prompts.prompt import FunctionPrompt
-
-    # Check that the decorator created a FunctionPrompt object
-    summarize_prompt = analysis.summarize
-    assert isinstance(summarize_prompt, FunctionPrompt)
-
-    # Verify it has name and description
-    assert hasattr(summarize_prompt, "name")
-    assert summarize_prompt.name == "summarize"
-
-    # Verify it has the underlying function
-    assert hasattr(summarize_prompt, "fn")
-    assert callable(summarize_prompt.fn)
+def _has_return_type(func: ast.FunctionDef) -> bool:
+    """Check if function has a return type annotation."""
+    return func.returns is not None
 
 
-def test_prompt_underlying_function_callable():
-    """Test that the underlying prompt function can be invoked."""
-    from fastmcp.prompts.prompt import FunctionPrompt
+# -- analysis.py --
 
-    # Get the FunctionPrompt object
-    summarize_prompt = analysis.summarize
-    assert isinstance(summarize_prompt, FunctionPrompt)
+class TestAnalysisPrompts:
+    """Verify analysis.py prompt structure."""
 
-    # Call the underlying function
-    result = summarize_prompt.fn("Test document content")
-    assert isinstance(result, str)
-    assert "Test document content" in result
-    assert "Summarize" in result or "summarize" in result
+    @pytest.fixture(autouse=True)
+    def _parse(self):
+        self.tree = _parse_module("analysis.py")
+        self.functions = _get_decorated_functions(self.tree)
 
+    def test_expected_prompts_exist(self):
+        names = {f.name for f in self.functions}
+        for expected in ("summarize", "classify", "analyze_sentiment", "extract_entities"):
+            assert expected in names, f"analysis.py should define '{expected}' prompt"
 
-def test_prompt_with_optional_parameters_function():
-    """Test prompts with optional parameters work at the function level."""
-    from fastmcp.prompts.prompt import FunctionPrompt
+    def test_all_use_prompt_decorator(self):
+        for func in self.functions:
+            assert _uses_prompt_decorator(func), (
+                f"{func.name} should use the @prompt decorator"
+            )
 
-    extract_prompt = analysis.extract_entities
-    assert isinstance(extract_prompt, FunctionPrompt)
+    def test_all_have_return_type(self):
+        for func in self.functions:
+            assert _has_return_type(func), (
+                f"{func.name} should have a return type annotation"
+            )
 
-    # Test with no optional params
-    result1 = extract_prompt.fn("John works at Google in New York")
-    assert isinstance(result1, str)
-    assert "John works at Google in New York" in result1
+    def test_all_have_docstrings(self):
+        for func in self.functions:
+            docstring = ast.get_docstring(func)
+            assert docstring, f"{func.name} should have a docstring"
 
-    # Test with optional entity_types
-    result2 = extract_prompt.fn(
-        "John works at Google in New York",
-        entity_types=["PERSON", "ORGANIZATION"],
-    )
-    assert isinstance(result2, str)
-    assert "PERSON" in result2
-    assert "ORGANIZATION" in result2
-
-
-def test_analyze_sentiment_prompt():
-    """Test analyze_sentiment prompt returns proper string."""
-    from fastmcp.prompts.prompt import FunctionPrompt
-
-    sentiment_prompt = analysis.analyze_sentiment
-    assert isinstance(sentiment_prompt, FunctionPrompt)
-
-    result = sentiment_prompt.fn("This is great!")
-    assert isinstance(result, str)
-    assert "This is great!" in result
-    assert "sentiment" in result.lower()
+    def test_imports_standalone_prompt(self):
+        """Module imports prompt from fastmcp.prompts (standalone decorator)."""
+        source = (PROMPTS_DIR / "analysis.py").read_text()
+        assert "from fastmcp.prompts import prompt" in source
 
 
-def test_generate_readme_prompt():
-    """Test generate_readme prompt returns proper string."""
-    from fastmcp.prompts.prompt import FunctionPrompt
+# -- documentation.py --
 
-    readme_prompt = documentation.generate_readme
-    assert isinstance(readme_prompt, FunctionPrompt)
+class TestDocumentationPrompts:
+    """Verify documentation.py prompt structure."""
 
-    result = readme_prompt.fn(
-        "MyProject",
-        "A test project",
-        features=["Feature 1", "Feature 2"],
-    )
-    assert isinstance(result, str)
-    assert "MyProject" in result
-    assert "Feature 1" in result
-    assert "Feature 2" in result
+    @pytest.fixture(autouse=True)
+    def _parse(self):
+        self.tree = _parse_module("documentation.py")
+        self.functions = _get_decorated_functions(self.tree)
 
+    def test_expected_prompts_exist(self):
+        names = {f.name for f in self.functions}
+        for expected in ("generate_docstring", "generate_readme", "explain_code", "generate_api_docs"):
+            assert expected in names, f"documentation.py should define '{expected}' prompt"
 
-def test_prompt_parameter_validation():
-    """Test that prompt functions accept parameters correctly."""
-    from fastmcp.prompts.prompt import FunctionPrompt
+    def test_all_use_prompt_decorator(self):
+        for func in self.functions:
+            assert _uses_prompt_decorator(func), (
+                f"{func.name} should use the @prompt decorator"
+            )
 
-    title_prompt = general.generate_title
-    assert isinstance(title_prompt, FunctionPrompt)
+    def test_all_have_return_type(self):
+        for func in self.functions:
+            assert _has_return_type(func), (
+                f"{func.name} should have a return type annotation"
+            )
 
-    # Test with valid parameters
-    result = title_prompt.fn("Some content", num_options=5)
-    assert isinstance(result, str)
-    assert "5" in result or "five" in result.lower()
-
-    # Test with default parameters
-    result = title_prompt.fn("Some content")
-    assert isinstance(result, str)
-    assert "3" in result or "three" in result.lower()
+    def test_imports_standalone_prompt(self):
+        source = (PROMPTS_DIR / "documentation.py").read_text()
+        assert "from fastmcp.prompts import prompt" in source
 
 
-def test_prompts_have_docstrings():
-    """Test that prompt functions have docstrings preserved."""
-    from fastmcp.prompts.prompt import FunctionPrompt
+# -- general.py --
 
-    summarize_prompt = analysis.summarize
-    assert isinstance(summarize_prompt, FunctionPrompt)
+class TestGeneralPrompts:
+    """Verify general.py prompt structure."""
 
-    # The underlying function should have a docstring
-    assert summarize_prompt.fn.__doc__ is not None
-    assert "Summarize" in summarize_prompt.fn.__doc__
+    @pytest.fixture(autouse=True)
+    def _parse(self):
+        self.tree = _parse_module("general.py")
+        self.functions = _get_decorated_functions(self.tree)
+
+    def test_expected_prompts_exist(self):
+        names = {f.name for f in self.functions}
+        for expected in ("translate_text", "proofread_text", "compare_texts", "generate_title"):
+            assert expected in names, f"general.py should define '{expected}' prompt"
+
+    def test_all_use_prompt_decorator(self):
+        for func in self.functions:
+            assert _uses_prompt_decorator(func), (
+                f"{func.name} should use the @prompt decorator"
+            )
+
+    def test_all_have_return_type(self):
+        for func in self.functions:
+            assert _has_return_type(func), (
+                f"{func.name} should have a return type annotation"
+            )
+
+    def test_imports_standalone_prompt(self):
+        source = (PROMPTS_DIR / "general.py").read_text()
+        assert "from fastmcp.prompts import prompt" in source

@@ -1,9 +1,9 @@
 from typing import Annotated
 from fastmcp import Context
-from ...core.app import mcp
+from fastmcp.tools import tool
 
 
-@mcp.tool(
+@tool(
     annotations={
         "readOnlyHint": True,
         "idempotentHint": False,

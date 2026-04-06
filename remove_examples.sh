@@ -58,12 +58,6 @@ if [ -d "tests/examples" ]; then
     echo "✓ Removed tests/examples"
 fi
 
-# Remove the preview_prompt utility (it was for testing examples)
-if [ -f "src/tools/_preview_prompt_utility.py" ]; then
-    rm -f src/tools/_preview_prompt_utility.py
-    echo "✓ Removed preview_prompt utility"
-fi
-
 # Remove cache files
 echo ""
 echo "🧹 Cleaning cache files..."
