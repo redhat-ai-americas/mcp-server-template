@@ -1,7 +1,7 @@
 from typing import Annotated
 from dataclasses import dataclass
 from fastmcp import Context
-from ...core.app import mcp
+from fastmcp.tools import tool
 
 
 @dataclass
@@ -9,7 +9,7 @@ class Confirm:
     ok: bool
 
 
-@mcp.tool(
+@tool(
     annotations={
         "readOnlyHint": False,
         "destructiveHint": True,
@@ -30,7 +30,7 @@ async def delete_all(ctx: Context = None) -> str:
         return "Operation cancelled"
 
 
-@mcp.tool(
+@tool(
     annotations={
         "readOnlyHint": True,
         "openWorldHint": True,

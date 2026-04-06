@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+For detailed FastMCP documentation, see https://gofastmcp.com.
+
 ## Build and Test Commands
 
 ```bash
@@ -17,7 +19,7 @@ make test
 .venv/bin/pytest tests/ -v
 
 # Run single test file
-.venv/bin/pytest tests/test_loaders.py -v
+.venv/bin/pytest tests/test_server.py -v
 
 # Run tests matching pattern
 .venv/bin/pytest tests/ -k "test_auth" -v
@@ -37,34 +39,38 @@ podman build --platform linux/amd64 -f Containerfile -t my-mcp:latest .
 
 ### Component Loading System
 
-The server uses dynamic component loading at startup via `src/core/loaders.py`:
+The server uses FastMCP 3.x `FileSystemProvider` for automatic component discovery. There is no custom loader -- FastMCP scans directories directly.
 
-1. **Entry point**: `src/main.py` creates `UnifiedMCPServer` and calls `load()` then `run()`
-2. **Server bootstrap**: `src/core/server.py` orchestrates loading and transport selection
-3. **Central MCP instance**: `src/core/app.py` exports the shared `mcp` FastMCP instance
-4. **Loaders**: `load_all()` discovers and imports modules from `src/tools/`, `src/resources/`, `src/prompts/`, `src/middleware/`
+1. **Entry point**: `src/main.py` calls `create_server()` then `run_server(mcp)`
+2. **Server bootstrap**: `src/core/server.py` creates three `FileSystemProvider` instances that scan `src/tools/`, `src/resources/`, and `src/prompts/`
+3. **Standalone decorators**: Components use `@tool`, `@resource`, `@prompt` from `fastmcp.tools`, `fastmcp.resources`, `fastmcp.prompts` respectively -- they do NOT import a shared `mcp` instance
+4. **Hot reload**: `FileSystemProvider(path, reload=True)` when `MCP_HOT_RELOAD` is enabled
 
-Components register themselves via FastMCP decorators (`@mcp.tool`, `@mcp.resource`, `@mcp.prompt`) that reference the shared `mcp` instance from `src/core/app.py`.
+The `src/core/app.py` module re-exports `create_server()` for convenience (e.g., in tests) but components themselves never import from it.
 
 ### Import Convention
 
-**IMPORTANT**: Always use the `src.` prefix for all imports within this project:
+**IMPORTANT**: Components use standalone FastMCP decorators. Do NOT import a shared `mcp` instance.
 
 ```python
-# Correct - always use src. prefix
-from src.core.app import mcp
-from src.core.auth import requires_scopes
-from src.tools.my_tool import my_tool
+# Correct -- standalone decorators
+from fastmcp.tools import tool
+from fastmcp.resources import resource
+from fastmcp.prompts import prompt
+from fastmcp import Context
+from fastmcp.exceptions import ToolError
 
-# Incorrect - do NOT use short-form imports
-from core.app import mcp  # WRONG
-from tools.my_tool import my_tool  # WRONG
+# Incorrect -- these are FastMCP 2.x patterns
+from src.core.app import mcp  # WRONG: no shared instance needed
+@mcp.tool  # WRONG: use standalone @tool instead
 ```
 
-This convention ensures consistent imports across:
-- Component files in `src/tools/`, `src/resources/`, `src/prompts/`, `src/middleware/`
-- Test files in `tests/`
-- The dynamic loader system
+For cross-module imports within the project, continue to use the `src.` prefix:
+
+```python
+from src.core.logging import get_logger
+from src.core.auth import configure_auth
+```
 
 The `conftest.py` at project root adds the project directory to `sys.path`, enabling `src.*` imports.
 
@@ -72,43 +78,43 @@ The `conftest.py` at project root adds the project directory to `sys.path`, enab
 
 ```
 src/
-├── core/
-│   ├── app.py        # Creates shared `mcp` FastMCP instance
-│   ├── server.py     # UnifiedMCPServer: load + run orchestration
-│   ├── loaders.py    # Dynamic discovery of tools/resources/prompts/middleware
-│   ├── auth.py       # JWT authentication helpers
-│   └── logging.py    # Logging configuration
-├── tools/            # Tool implementations (flat directory)
-├── resources/        # Resource implementations (supports subdirectories)
-├── prompts/          # Python-based prompt definitions
-└── middleware/       # Middleware classes (extend FastMCP Middleware base)
+|-- core/
+|   |-- app.py        # Re-exports create_server() for convenience
+|   |-- server.py     # create_server() + run_server(): providers, middleware, auth
+|   |-- auth.py       # JWT auth via FastMCP's JWTVerifier + RemoteAuthProvider
+|   +-- logging.py    # Logging configuration
+|-- tools/            # Tool implementations (standalone @tool decorator)
+|-- resources/        # Resource implementations (standalone @resource decorator, supports subdirectories)
+|-- prompts/          # Prompt implementations (standalone @prompt decorator)
++-- middleware/       # Middleware classes (extend fastmcp.server.middleware.Middleware)
 ```
 
 ### Transport Modes
 
-- **STDIO** (local): `MCP_TRANSPORT=stdio` - for cmcp testing
-- **HTTP** (OpenShift): `MCP_TRANSPORT=http` - streamable-http on port 8080
+- **STDIO** (local): `MCP_TRANSPORT=stdio` -- for cmcp testing
+- **HTTP** (OpenShift): `MCP_TRANSPORT=http` -- streamable-http on port 8080
 
 ## Testing FastMCP Decorated Functions
 
-FastMCP decorators wrap functions in special objects. Access the underlying function via `.fn`:
+FastMCP 3.x standalone decorators (`@tool`, `@resource`, `@prompt`) return the original function with `__fastmcp__` metadata attached. You can call decorated functions directly in tests:
 
 ```python
-from src.tools.my_tool import my_tool
-
-my_tool_fn = my_tool.fn  # Access underlying function
+from src.tools.examples.echo import echo
 
 @pytest.mark.asyncio
-async def test_my_tool():
-    result = await my_tool_fn(param1="value1")
-    assert result == "expected"
+async def test_echo():
+    # Call the function directly -- no .fn access needed
+    result = await echo(message="hello", ctx=None)
+    assert result == "hello"
 ```
+
+If a tool uses `ctx` methods (e.g., `await ctx.info(...)`) you will need to provide a mock context or pass `ctx=None` and handle the `AttributeError`. See existing tests in `tests/examples/` for patterns.
 
 ## Dependency Management
 
 Dependencies must be listed in BOTH files:
-- `pyproject.toml` - for local `pip install -e .`
-- `requirements.txt` - for container builds
+- `pyproject.toml` -- for local `pip install -e .`
+- `requirements.txt` -- for container builds
 
 ## Adding Components
 
@@ -118,26 +124,33 @@ Dependencies must be listed in BOTH files:
 from typing import Annotated
 from pydantic import Field
 from fastmcp import Context
-from src.core.app import mcp
+from fastmcp.tools import tool
 
-@mcp.tool
+@tool(
+    annotations={
+        "readOnlyHint": True,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+)
 async def my_tool(
     param: Annotated[str, Field(description="Parameter description")],
     ctx: Context = None,
 ) -> str:
     """Tool description for the LLM."""
+    await ctx.info(f"Processing: {param}")
     return f"Result: {param}"
 ```
 
 ### Resources (`src/resources/`)
 
-Supports subdirectories. Files are auto-discovered.
+Supports subdirectories. Files are auto-discovered by `FileSystemProvider`.
 
 ```python
-from src.core.app import mcp
+from fastmcp.resources import resource
 
-@mcp.resource("weather://{city}/current")
-async def get_weather(city: str) -> dict:
+@resource("weather://{city}/current", name="current_weather")
+def get_weather(city: str) -> dict:
     """Weather for a city."""
     return {"city": city, "temperature": 22}
 ```
@@ -145,35 +158,58 @@ async def get_weather(city: str) -> dict:
 ### Prompts (`src/prompts/`)
 
 ```python
+from typing import Annotated
 from pydantic import Field
-from src.core.app import mcp
+from fastmcp.prompts import prompt
 
-@mcp.prompt
+@prompt()
 def my_prompt(
-    query: str = Field(description="User query"),
+    query: Annotated[str, Field(description="User query")],
 ) -> str:
     """Purpose of this prompt."""
     return f"Please answer: {query}"
 ```
 
-**Type annotations**: Use parameterized types (`dict[str, str]`, `list[str]`) - never bare `dict` or `list`.
+**Type annotations**: Use parameterized types (`dict[str, str]`, `list[str]`) -- never bare `dict` or `list`.
 
 ### Middleware (`src/middleware/`)
 
+The server uses FastMCP's built-in `LoggingMiddleware` by default. Custom middleware inherits from the FastMCP base class:
+
 ```python
-from fastmcp.server.middleware import Middleware
+from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
+from fastmcp.tools.tool import ToolResult
+import mcp.types as mt
 
 class MyMiddleware(Middleware):
-    async def on_call_tool(self, context, request, next_handler):
-        # Pre-execution
-        result = await next_handler(context, request)
-        # Post-execution
+    async def on_call_tool(
+        self,
+        context: MiddlewareContext[mt.CallToolRequestParams],
+        call_next: CallNext[mt.CallToolRequestParams, ToolResult],
+    ) -> ToolResult:
+        # Pre-execution logic
+        result = await call_next(context)
+        # Post-execution logic
         return result
+```
+
+### Auth-Protected Components
+
+FastMCP 3.x supports per-component scope checks via the `auth` parameter on decorators. The server-level auth is configured in `src/core/auth.py` using `JWTVerifier` and optionally `RemoteAuthProvider`.
+
+```python
+from fastmcp.server.auth import require_scopes
+from fastmcp.tools import tool
+
+@tool(auth=require_scopes("admin"))
+async def admin_only_tool() -> str:
+    """Only accessible with admin scope."""
+    return "secret data"
 ```
 
 ## Generator CLI
 
-**IMPORTANT**: `fips-agents` is a global CLI tool installed via pipx. Do NOT use `.venv/bin/fips-agents` - just run `fips-agents` directly.
+**IMPORTANT**: `fips-agents` is a global CLI tool installed via pipx. Do NOT use `.venv/bin/fips-agents` -- just run `fips-agents` directly.
 
 ```bash
 # Generate tool
@@ -191,9 +227,9 @@ fips-agents generate middleware my_middleware --description "Middleware descript
 
 ## Prompt Return Types
 
-- `str` - Simple string (default)
-- `PromptMessage` - Structured message with role
-- `list[PromptMessage]` - Multi-turn conversation
+- `str` -- Simple string (default)
+- `PromptMessage` -- Structured message with role
+- `list[PromptMessage]` -- Multi-turn conversation
 
 ## Pre-deployment
 
@@ -206,13 +242,13 @@ This template provides slash commands for a structured development workflow:
 ### Recommended Sequence
 
 ```
-/plan-tools              → Creates TOOLS_PLAN.md (planning only, no code)
-        ↓
-/create-tools            → Generates and implements tools in parallel
-        ↓
-/exercise-tools          → Tests ergonomics by role-playing as consuming agent
-        ↓
-/deploy-mcp PROJECT=x    → Deploys to OpenShift (optional, for remote MCP servers)
+/plan-tools              -> Creates TOOLS_PLAN.md (planning only, no code)
+        |
+/create-tools            -> Generates and implements tools in parallel
+        |
+/exercise-tools          -> Tests ergonomics by role-playing as consuming agent
+        |
+/deploy-mcp PROJECT=x   -> Deploys to OpenShift (optional, for remote MCP servers)
 ```
 
 ### Slash Commands
@@ -244,7 +280,6 @@ Key principles:
 **Symptoms**: MCP server starts but reports 0 tools loaded:
 ```
 PermissionError: [Errno 13] Permission denied: '/opt/app-root/src/src/core/some_file.py'
-Loaded: {'tools': 0, 'resources': 0, 'prompts': 0, 'middleware': 0}
 ```
 
 **Automatic Fixes in Place**:
@@ -257,12 +292,6 @@ find src -name "*.py" -perm 600 -exec chmod 644 {} \;
 ```
 
 **Why This Happens**: This is Claude Code security behavior, not OS behavior. The Write tool intentionally creates files with restrictive permissions to prevent accidental exposure of sensitive content. The Containerfile and deploy.sh fixes ensure this doesn't break OpenShift deployments.
-
-### Import Namespace Issue
-
-**Problem**: Using relative imports or path manipulation can create dual FastMCP instances.
-
-**Solution**: Always use `src.` prefixed absolute imports (see Import Convention section above).
 
 ## Testing MCP Servers
 
@@ -320,8 +349,17 @@ make deploy PROJECT=my-mcp-server
 | `MCP_HTTP_PORT` | `8000` | HTTP port |
 | `MCP_HTTP_PATH` | `/mcp/` | HTTP endpoint path |
 | `MCP_LOG_LEVEL` | `INFO` | Logging level |
-| `MCP_HOT_RELOAD` | `0` | Enable hot-reload for development |
+| `MCP_HOT_RELOAD` | `0` | Enable hot-reload (`FileSystemProvider` reload mode) |
 | `MCP_SERVER_NAME` | `fastmcp-unified` | Server name in MCP responses |
+| `MCP_AUTH_JWT_ALG` | *(none)* | JWT algorithm (e.g., RS256, HS256). Auth disabled if unset |
+| `MCP_AUTH_JWT_SECRET` | *(none)* | Shared secret for HMAC algorithms |
+| `MCP_AUTH_JWT_PUBLIC_KEY` | *(none)* | Public key for RSA/EC algorithms |
+| `MCP_AUTH_JWT_JWKS_URI` | *(none)* | JWKS endpoint URL (alternative to public key) |
+| `MCP_AUTH_JWT_ISSUER` | *(none)* | Expected token issuer |
+| `MCP_AUTH_JWT_AUDIENCE` | *(none)* | Expected token audience |
+| `MCP_AUTH_REQUIRED_SCOPES` | *(none)* | Comma-separated default required scopes |
+| `MCP_AUTH_AUTHORIZATION_SERVERS` | *(none)* | Comma-separated authorization server URLs |
+| `MCP_AUTH_BASE_URL` | *(none)* | This server's base URL for OAuth metadata |
 
 ## Context Management
 

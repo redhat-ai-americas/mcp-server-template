@@ -1,43 +1,45 @@
 # Architecture
 
-This project implements a FastMCP 2.x server with local STDIO and OpenShift HTTP transports, dynamic tooling, prompts with JSON schema injection, and OpenShift-native build/deploy.
+This project implements a [FastMCP 3.x](https://gofastmcp.com) server with local STDIO and OpenShift HTTP transports, filesystem-based component discovery, and OpenShift-native build/deploy.
 
-- Core framework: FastMCP 2.x
+- Core framework: FastMCP 3.x with standalone decorators
+- Component discovery: `FileSystemProvider` scans `src/tools/`, `src/resources/`, `src/prompts/`
 - Transports: STDIO (local), HTTP (OpenShift)
-- Dynamic loading: tools, resources, prompts, middleware
-- Auth: optional JWT verification and scope checks
+- Auth: built-in `JWTVerifier` + `RemoteAuthProvider` with per-component `require_scopes()`
+- Middleware: class-based, passed to `FastMCP` constructor
 - Generator system: Jinja2 templates for scaffolding components
 - OpenShift: ImageStream, BuildConfigs (Git or Binary), Deployment, Service, Route, HPA
 
 ## Components
 
-- `src/core/app.py`: Instantiates `FastMCP` and shared logger; imports prompts module for decorator registration
-- `src/core/server.py`: Bootstraps logging, loads components, and runs server (STDIO or HTTP)
-- `src/core/loaders.py`: Loads tools/resources/prompts/middleware from filesystem; hot-reload in dev
-- `src/core/auth.py`: Optional JWT verification and scope decorator
-- `src/tools/*.py`: Example tools including sampling and elicitation
-- `src/tools/advanced_examples.py`: Comprehensive examples of FastMCP best practices
-- `src/resources/*.py`: Example resource with explicit URI
-- `src/prompts/*.py`: Python-based prompts using FastMCP decorators (@mcp.prompt())
-- `src/middleware/*.py`: Middleware for cross-cutting concerns (logging, auth, rate limiting, etc.)
-- `src/tools/preview_prompt.py`: CLI to preview a prompt with injected schema and variable replacements
+- `src/core/server.py`: `create_server()` builds the `FastMCP` instance with providers, middleware, and auth; `run_server()` selects STDIO or HTTP transport
+- `src/core/app.py`: Re-exports `create_server()` for test access; no shared `mcp` singleton
+- `src/core/auth.py`: Configures `JWTVerifier` and optional `RemoteAuthProvider` from environment variables
+- `src/core/logging.py`: Logging configuration
+- `src/tools/*.py`: Tool implementations using `@tool` decorator from `fastmcp.tools`
+- `src/resources/*.py`: Resource implementations using `@resource` decorator from `fastmcp.resources`
+- `src/prompts/*.py`: Prompt definitions using `@prompt` decorator from `fastmcp.prompts`
+- `src/middleware/*.py`: Middleware classes extending `fastmcp.server.middleware.Middleware`
+- `src/*/examples/`: Example components (removed before deployment via `remove_examples.sh`)
 - `src/ops/deploy_cli.py`: Interactive OpenShift deployer using `oc`
 - `.fips-agents-cli/generators/`: Jinja2 templates for generating new components
 
-### Tools Best Practices (FastMCP 2.11.0+)
+### Tools Best Practices (FastMCP 3.x)
 
 All tools follow FastMCP best practices:
 
-- **Annotated Descriptions** (v2.11.0+): Use `Annotated[type, "description"]` for parameter documentation
+- **Standalone Decorators**: Use `@tool` from `fastmcp.tools` -- no shared server instance needed
+- **Annotated Descriptions**: Use `Annotated[type, "description"]` for parameter documentation
 - **Field Validation**: Use Pydantic `Field` for constraints (ranges, lengths, patterns)
-- **Tool Annotations** (v2.2.7+): Provide hints about tool behavior:
+- **Tool Annotations**: Provide hints about tool behavior:
   - `readOnlyHint`: Tool doesn't modify state
   - `idempotentHint`: Same inputs produce same outputs
   - `destructiveHint`: Tool performs destructive operations
   - `openWorldHint`: Tool accesses external systems
-- **Structured Output** (v2.10.0+): Use dataclasses for complex return types
+- **Structured Output**: Use dataclasses for complex return types
 - **Error Handling**: Use `ToolError` for user-facing validation errors
-- **Context Parameter**: Always include `ctx: Context = None` for logging and capabilities (sampling, elicitation)
+- **Context Parameter**: Include `ctx: Context` for logging and capabilities (sampling, elicitation)
+- **Auth Protection**: Use `@tool(auth=require_scopes("scope"))` for access control
 
 ## Runtime Flow (HTTP)
 
@@ -51,28 +53,28 @@ sequenceDiagram
   Client->>Route: HTTPS request to /mcp/
   Route->>Service: Forward
   Service->>Deployment: Forward
-  Deployment->>Deployment: Bearer JWT verify (optional)
-  Deployment->>Deployment: Load tools/resources/prompts
+  Deployment->>Deployment: JWTVerifier token validation (optional)
+  Deployment->>Deployment: FileSystemProvider discovers components
   Deployment-->>Client: Streamable HTTP responses
 ```
 
-## Loading Flow
+## Server Bootstrap Flow
 
 ```mermaid
 flowchart TD
-  A[Server start] --> B{Transport}
-  B -- STDIO --> C[Run FastMCP in STDIO]
-  B -- HTTP --> D[Run FastMCP in HTTP]
-  A --> E[load_all]
-  E --> F[load_tools]
-  E --> G[load_resources]
-  E --> H[load_prompts]
-  E --> I[load_middleware]
-  H --> J[Import Python modules with @mcp.prompt decorators]
-  J --> K[Decorators auto-register prompts with FastMCP]
-  I --> L[Import middleware modules with @mcp.middleware decorators]
-  L --> M[Decorators auto-register middleware with FastMCP]
+  A[src/main.py] --> B[create_server]
+  B --> C[FileSystemProvider: src/tools/]
+  B --> D[FileSystemProvider: src/resources/]
+  B --> E[FileSystemProvider: src/prompts/]
+  B --> F[Configure middleware]
+  B --> G[configure_auth]
+  B --> H[FastMCP instance]
+  H --> I{MCP_TRANSPORT}
+  I -- stdio --> J[Run STDIO]
+  I -- http --> K[Run HTTP]
 ```
+
+Components are discovered at startup by `FileSystemProvider`, which scans directories for Python modules containing standalone `@tool`, `@resource`, and `@prompt` decorators. When `reload=True` (hot-reload mode), the provider watches for file changes and re-imports modified modules.
 
 ## OpenShift Build/Deploy
 
@@ -88,65 +90,84 @@ flowchart TD
 
 ## Key Decisions
 
-- Use FastMCP 2.x decorator APIs: `@mcp.prompt()` for Python-based prompts with type safety
+- Use FastMCP 3.x standalone decorators: `@tool`, `@resource`, `@prompt` from their respective modules
+- No shared `mcp` instance -- components are self-contained modules discovered by `FileSystemProvider`
+- Auth uses FastMCP's built-in `JWTVerifier` + `RemoteAuthProvider`, with per-component `require_scopes()`
+- Middleware uses class-based `Middleware` subclasses, passed to `FastMCP(middleware=[...])` constructor
 - Python prompts in `src/prompts/` use Pydantic Field annotations for parameter descriptions
-- Resource registration requires explicit URI: `@mcp.resource("resource://...")`
-- Middleware uses `@mcp.middleware()` decorator for self-registration
+- Resource registration requires explicit URI: `@resource("resource://...")`
 - Generator templates use Jinja2 and live in project (not CLI) for customization
 - OpenShift-native builds: prefer Binary Build for local projects without Git; Git Build also supported
 - Images pulled from internal registry `image-registry.openshift-image-registry.svc:5000/<ns>/<name>:latest`
 
 ## Prompt System
 
-Prompts are defined using Python decorators for better type safety and IDE support:
+Prompts use standalone `@prompt` decorators for type safety and IDE support:
 
-- Location: `src/prompts/` directory with `__init__.py`, `analysis.py`, `documentation.py`, `general.py`
-- Pattern: Use `@mcp.prompt()` decorator on functions
-- Type annotations: Use `Annotated[type, Field(...)]` from Pydantic for parameters
-- Return types: Support `str`, `Message`, or `list[Message]`
-- Hot-reload: Changes to prompt modules are automatically reloaded in dev mode
+- Location: `src/prompts/` directory
+- Pattern: Use `@prompt` decorator from `fastmcp.prompts`
+- Type annotations: Use `Field(description=...)` from Pydantic for parameters
+- Return types: Support `str`, `PromptMessage`, or `list[PromptMessage]`
+- Hot-reload: `FileSystemProvider(reload=True)` watches for changes in dev mode
 
 Example:
 ```python
-from typing import Annotated
 from pydantic import Field
-from ..core.app import mcp
+from fastmcp.prompts import prompt
 
-@mcp.prompt()
+@prompt
 def summarize(
-    document: Annotated[str, Field(description="The document text to summarize")],
+    document: str = Field(description="The document text to summarize"),
 ) -> str:
     return f"Summarize the following text:\n<document>{document}</document>"
 ```
 
 ## Middleware System
 
-Middleware wraps tool execution to add cross-cutting concerns like logging, authentication, rate limiting, etc.
+Middleware uses class-based middleware extending the `Middleware` base class. Middleware instances are passed to the `FastMCP` constructor -- they are not auto-discovered.
 
-- Location: `src/middleware/` directory
-- Pattern: Use `@mcp.middleware()` decorator on async functions
-- Signature: `async def middleware_name(ctx: Context, next_handler: Callable, *args, **kwargs) -> Any`
-- Hot-reload: Changes to middleware modules are automatically reloaded in dev mode
-- Self-registration: Middleware registers automatically when module is imported
+- Location: `src/middleware/` directory (for organization)
+- Registration: Instantiated and passed to `FastMCP(middleware=[...])` in `src/core/server.py`
+- Base class: `fastmcp.server.middleware.Middleware`
+- Override methods: `on_call_tool`, `on_list_tools`, `on_read_resource`, etc.
 
 Example:
 ```python
-from typing import Any, Callable
-from fastmcp import Context
-from core.app import mcp
+import mcp.types as mt
+from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
+from fastmcp.tools.tool import ToolResult
 
-@mcp.middleware()
-async def logging_middleware(
-    ctx: Context,
-    next_handler: Callable,
-    *args: Any,
-    **kwargs: Any
-) -> Any:
-    tool_name = ctx.request.tool_name
-    print(f"Executing: {tool_name}")
-    result = await next_handler(*args, **kwargs)
-    print(f"Completed: {tool_name}")
-    return result
+class LoggingMiddleware(Middleware):
+    async def on_call_tool(
+        self,
+        context: MiddlewareContext[mt.CallToolRequestParams],
+        call_next: CallNext[mt.CallToolRequestParams, ToolResult],
+    ) -> ToolResult:
+        tool_name = context.request.params.name
+        print(f"Executing: {tool_name}")
+        result = await call_next(context)
+        print(f"Completed: {tool_name}")
+        return result
+```
+
+## Authentication System
+
+Auth uses FastMCP's built-in authentication primitives:
+
+- `JWTVerifier`: Validates JWT tokens (supports HMAC, RSA, EC algorithms and JWKS endpoints)
+- `RemoteAuthProvider`: Wraps `JWTVerifier` with OAuth 2.0 Protected Resource metadata (RFC 9728)
+- `require_scopes()`: Per-component scope checks via the `auth` parameter on decorators
+
+Configuration is driven by environment variables in `src/core/auth.py`. Per-component authorization:
+
+```python
+from fastmcp.server.auth import require_scopes
+from fastmcp.tools import tool
+
+@tool(auth=require_scopes("admin"))
+async def admin_tool() -> str:
+    """Only accessible with admin scope."""
+    return "secret data"
 ```
 
 ## Generator System
@@ -163,7 +184,7 @@ Key features:
 - Generates both implementation and test files
 - Includes TODO comments and examples
 - Supports async/sync, authentication, context parameters
-- Follows FastMCP best practices
+- Follows FastMCP 3.x patterns (standalone decorators)
 - Templates use Jinja2 syntax for flexibility
 
 See [GENERATOR_PLAN.md](GENERATOR_PLAN.md) for comprehensive generator documentation.
@@ -175,7 +196,9 @@ Environment variables (selected):
 - `MCP_HTTP_HOST`, `MCP_HTTP_PORT`, `MCP_HTTP_PATH`
 - `MCP_HTTP_ALLOWED_ORIGINS`
 - `MCP_AUTH_JWT_ALG`, `MCP_AUTH_JWT_SECRET`, `MCP_AUTH_JWT_PUBLIC_KEY`
-- `MCP_REQUIRED_SCOPES`
+- `MCP_AUTH_JWT_JWKS_URI`, `MCP_AUTH_JWT_ISSUER`, `MCP_AUTH_JWT_AUDIENCE`
+- `MCP_AUTH_REQUIRED_SCOPES`
+- `MCP_AUTH_AUTHORIZATION_SERVERS`, `MCP_AUTH_BASE_URL`
 
 ## CLI Deployment
 
@@ -237,15 +260,18 @@ Files created by Claude Code subagents may have `600` permissions, preventing th
 find src -name "*.py" -perm 600 -exec chmod 644 {} \;
 ```
 
-### Import Namespace Issue
+### Import Conventions
 
-Using relative imports or path manipulation can create dual FastMCP instances where tools register to one instance but the server runs another. Always use `src.` prefixed absolute imports:
+In FastMCP 3.x, components use standalone decorators and do not import a shared `mcp` instance. The `src.` prefix is still used for internal imports between core modules:
 
 ```python
-# Correct
-from src.core.app import mcp
+# Component files use standalone decorators -- no server import needed
+from fastmcp.tools import tool
 
-# Incorrect
-from core.app import mcp
-from .app import mcp
+@tool
+async def my_tool(param: str) -> str:
+    return f"Result: {param}"
+
+# Core modules still use src. prefix for internal imports
+from src.core.logging import get_logger
 ```

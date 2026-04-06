@@ -1,21 +1,19 @@
 """
 Data analysis prompts for text processing and classification.
 
-These prompts demonstrate FastMCP 2.x decorator-based prompt patterns with:
+These prompts demonstrate FastMCP 3.x standalone decorator patterns with:
 - Simplified Field() pattern for parameter validation
 - Type hints with parameterized types (dict[str, str])
 - Docstrings for documentation
 - Optional parameters with defaults
-- FastMCP 2.9.0+ compatibility
+- FastMCP 3.x compatibility
 """
 
 from pydantic import Field
-
-# Import the shared mcp instance from core
-from ...core.app import mcp
+from fastmcp.prompts import prompt
 
 
-@mcp.prompt
+@prompt
 def summarize(
     document: str = Field(
         description="The document text to summarize",
@@ -45,7 +43,7 @@ Return your response as JSON with this structure:
 }}"""
 
 
-@mcp.prompt
+@prompt
 def classify(
     text: str = Field(
         description="The text to classify into categories",
@@ -74,7 +72,7 @@ Return JSON matching this schema:
 }}"""
 
 
-@mcp.prompt
+@prompt
 def analyze_sentiment(
     text: str = Field(
         description="The text to analyze for sentiment",
@@ -108,7 +106,7 @@ Return as JSON:
 }}"""
 
 
-@mcp.prompt
+@prompt
 def extract_entities(
     text: str = Field(
         description="The text to extract named entities from",
@@ -152,7 +150,7 @@ Return JSON with entities grouped by type:
 }}"""
 
 
-@mcp.prompt
+@prompt
 def analyze_data(
     data: dict[str, str] = Field(
         description=(
@@ -168,7 +166,7 @@ def analyze_data(
     """
     Analyze structured data and provide insights.
 
-    This example demonstrates FastMCP 2.9.0+ dict parameter handling.
+    This example demonstrates FastMCP 3.x dict parameter handling.
     Clients pass dict as JSON string, FastMCP converts automatically.
 
     Args:

@@ -1,18 +1,16 @@
 [project]
 name = "fastmcp-unified-template"
-version = "0.4.0"
-description = "MCP server template with dynamic tools/resources, YAML prompts (JSON schema injection), hot‑reload, Kubernetes/OpenShift, and tests"
+version = "0.5.0"
+description = "MCP server template using FastMCP 3.x with FileSystemProvider discovery, standalone decorators, and OpenShift deployment"
 requires-python = ">=3.11"
 authors = [{name = "Your Name", email = "you@example.com"}]
 readme = "README.md"
 dependencies = [
-  "fastmcp>=2.11.3",
+  "fastmcp>=3.2.0",
   "pyyaml>=6.0.2",
   "python-dotenv>=1.1.1",
-  "watchdog>=6.0.0",
   "pytest>=8.4.1",
   "pytest-asyncio>=0.24.0",
-  "pyjwt>=2.10.1",
 ]
 
 [build-system]

@@ -1,9 +1,9 @@
 """Emergency protocol for lost or stolen passport."""
 
-from ...core.app import mcp
+from fastmcp.resources import resource
 
 
-@mcp.resource(
+@resource(
     "emergency-protocols://passport-lost",
     mime_type="text/markdown",
     description="Step-by-step emergency response for lost or stolen passport",

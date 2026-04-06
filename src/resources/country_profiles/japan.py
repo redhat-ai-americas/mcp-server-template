@@ -1,9 +1,9 @@
 """Country profile resource for Japan."""
 
-from ...core.app import mcp
+from fastmcp.resources import resource
 
 
-@mcp.resource(
+@resource(
     "country-profiles://JP",
     mime_type="application/json",
     description="Curated country profile for Japan with essential travel information",

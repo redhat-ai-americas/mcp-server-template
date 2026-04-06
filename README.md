@@ -1,20 +1,20 @@
 # FastMCP Server Template
 
-A production-ready MCP (Model Context Protocol) server template with dynamic tool/resource loading, Python decorator-based prompts, and seamless OpenShift deployment.
+A production-ready MCP (Model Context Protocol) server template built on [FastMCP 3.x](https://gofastmcp.com), with filesystem-based component discovery, standalone decorators, and seamless OpenShift deployment.
 
 ## Features
 
-- 🔧 **Dynamic tool/resource loading** via decorators
-- 📁 **Resource subdirectories** for organizing related resources
-- 📝 **Python-based prompts** with type safety and FastMCP decorators
-- 🔀 **Middleware support** for cross-cutting concerns
-- 🏗️ **Generator system** for scaffolding new components with non-interactive CLI
-- 🔄 **Selective updates** - patch infrastructure without losing custom code
-- 🚀 **One-command OpenShift deployment**
-- 🔥 **Hot-reload** for local development
-- 🧪 **Local STDIO** and **OpenShift HTTP** transports
-- 🔐 **JWT authentication** (optional) with scope-based authorization
-- ✅ **Full test suite** with pytest
+- **Standalone decorators** (`@tool`, `@resource`, `@prompt`) with automatic filesystem discovery
+- **Resource subdirectories** for organizing related resources
+- **Python-based prompts** with type safety and Pydantic Field annotations
+- **Class-based middleware** for cross-cutting concerns
+- **Generator system** for scaffolding new components with non-interactive CLI
+- **Selective updates** - patch infrastructure without losing custom code
+- **One-command OpenShift deployment**
+- **Hot-reload** via `FileSystemProvider(reload=True)` for local development
+- **Local STDIO** and **OpenShift HTTP** transports
+- **JWT authentication** (optional) with built-in `JWTVerifier` and `RemoteAuthProvider`
+- **Full test suite** with pytest
 
 ## Quick Start
 
@@ -51,13 +51,13 @@ This template includes slash commands for Claude Code that provide a structured 
 ### Recommended Sequence
 
 ```
-/plan-tools          →  TOOLS_PLAN.md (planning, no code)
-        ↓
-/create-tools        →  Generate + implement tools in parallel
-        ↓
-/exercise-tools      →  Test ergonomics as consuming agent
-        ↓
-/deploy-mcp PROJECT=x  →  Deploy to OpenShift (optional)
+/plan-tools          ->  TOOLS_PLAN.md (planning, no code)
+        |
+/create-tools        ->  Generate + implement tools in parallel
+        |
+/exercise-tools      ->  Test ergonomics as consuming agent
+        |
+/deploy-mcp PROJECT=x  ->  Deploy to OpenShift (optional)
 ```
 
 ### Slash Commands
@@ -81,39 +81,39 @@ See [CLAUDE.md](CLAUDE.md) for detailed documentation on the workflow, known iss
 ## Project Structure
 
 ```
-├── src/
-│   ├── core/           # Core server components
-│   ├── tools/          # Tool implementations
-│   ├── resources/      # Resource implementations (supports subdirectories)
-│   │   ├── country_profiles/   # Example: organized by category
-│   │   ├── checklists/
-│   │   └── emergency_protocols/
-│   ├── prompts/        # Python-based prompt definitions
-│   └── middleware/     # Middleware implementations
-├── tests/              # Test suite
-├── .fips-agents-cli/   # Generator templates
-├── .template-info      # Template version tracking (for updates)
-├── Containerfile       # Container definition
-├── openshift.yaml      # OpenShift manifests
-├── deploy.sh           # Deployment script
-├── requirements.txt    # Python dependencies
-└── Makefile           # Common tasks
+src/
+  core/           # Server bootstrap and auth configuration
+  tools/          # Tool implementations (standalone @tool decorators)
+    examples/     # Example tools (removed before deployment)
+  resources/      # Resource implementations (supports subdirectories)
+    examples/     # Example resources
+  prompts/        # Python-based prompt definitions
+    examples/     # Example prompts
+  middleware/     # Middleware classes
+tests/            # Test suite
+.fips-agents-cli/ # Generator templates
+.template-info    # Template version tracking (for updates)
+Containerfile     # Container definition
+openshift.yaml    # OpenShift manifests
+deploy.sh         # Deployment script
+requirements.txt  # Python dependencies
+Makefile          # Common tasks
 ```
 
 ## Development
 
 ### Adding Tools
 
-Create a Python file in `src/tools/`. Tools support rich type annotations, validation, and metadata:
+Create a Python file in `src/tools/`. Tools use the standalone `@tool` decorator from FastMCP 3.x -- no shared server instance needed:
 
 ```python
 from typing import Annotated
 from pydantic import Field
 from fastmcp import Context
+from fastmcp.tools import tool
 from fastmcp.exceptions import ToolError
-from src.core.app import mcp
 
-@mcp.tool(
+@tool(
     annotations={
         "readOnlyHint": True,
         "idempotentHint": True,
@@ -122,7 +122,7 @@ from src.core.app import mcp
 )
 async def my_tool(
     param: Annotated[str, Field(description="Parameter description", min_length=1, max_length=100)],
-    ctx: Context = None,
+    ctx: Context,
 ) -> str:
     """Tool description for the LLM."""
     await ctx.info("Processing request")
@@ -134,14 +134,24 @@ async def my_tool(
 ```
 
 **Best Practices:**
-- Use `Annotated` for parameter descriptions (FastMCP 2.11.0+)
+- Use `Annotated` for parameter descriptions
 - Add Pydantic `Field` constraints for validation
 - Use tool `annotations` for hints about behavior
-- Always include `ctx: Context = None` for logging and capabilities
+- Include `ctx: Context` for logging and capabilities
 - Raise `ToolError` for user-facing validation errors
 - Use structured output (dataclasses) for complex results
 
-See [TOOLS_GUIDE.md](docs/TOOLS_GUIDE.md) for comprehensive examples and patterns.
+**Auth-protected tools:**
+
+```python
+from fastmcp.server.auth import require_scopes
+from fastmcp.tools import tool
+
+@tool(auth=require_scopes("admin"))
+async def admin_tool() -> str:
+    """Only accessible with admin scope."""
+    return "secret data"
+```
 
 **Generator examples:**
 
@@ -188,18 +198,18 @@ Resources can be organized in subdirectories for better structure. Create files 
 
 **Simple resource:**
 ```python
-from src.core.app import mcp
+from fastmcp.resources import resource
 
-@mcp.resource("resource://my-resource")
+@resource("resource://my-resource")
 async def get_my_resource() -> str:
     return "Resource content"
 ```
 
 **JSON resource with metadata:**
 ```python
-from src.core.app import mcp
+from fastmcp.resources import resource
 
-@mcp.resource(
+@resource(
     "data://config",
     mime_type="application/json",
     description="Application configuration data"
@@ -210,9 +220,9 @@ async def get_config() -> dict:
 
 **Resource template (parameterized):**
 ```python
-from src.core.app import mcp
+from fastmcp.resources import resource
 
-@mcp.resource("weather://{city}/current")
+@resource("weather://{city}/current")
 async def get_weather(city: str) -> dict:
     """Weather information for a specific city."""
     return {"city": city, "temperature": 22, "condition": "Sunny"}
@@ -221,16 +231,16 @@ async def get_weather(city: str) -> dict:
 **Organizing resources in subdirectories:**
 ```
 src/resources/
-├── country_profiles/
-│   ├── __init__.py
-│   ├── japan.py          # country-profiles://JP
-│   └── france.py         # country-profiles://FR
-├── checklists/
-│   ├── __init__.py
-│   └── travel.py         # travel-checklists://first-trip
-└── emergency_protocols/
-    ├── __init__.py
-    └── passport.py       # emergency-protocols://passport-lost
+  country_profiles/
+    __init__.py
+    japan.py          # country-profiles://JP
+    france.py         # country-profiles://FR
+  checklists/
+    __init__.py
+    travel.py         # travel-checklists://first-trip
+  emergency_protocols/
+    __init__.py
+    passport.py       # emergency-protocols://passport-lost
 ```
 
 **Generator examples:**
@@ -262,18 +272,18 @@ fips-agents generate resource weather \
     --mime-type "application/json"
 ```
 
-Subdirectories are automatically discovered by the loader - no manual registration needed!
+Subdirectories are automatically discovered by `FileSystemProvider` -- no manual registration needed.
 
 ### Creating Prompts
 
-Create Python files in `src/prompts/`. Prompts support multiple return types, async operations, context access, and metadata:
+Create Python files in `src/prompts/`. Prompts use the standalone `@prompt` decorator:
 
 **Basic String Prompt:**
 ```python
 from pydantic import Field
-from src.core.app import mcp
+from fastmcp.prompts import prompt
 
-@mcp.prompt
+@prompt
 def my_prompt(
     query: str = Field(description="User query"),
 ) -> str:
@@ -285,15 +295,14 @@ def my_prompt(
 ```python
 from pydantic import Field
 from fastmcp import Context
-from src.core.app import mcp
+from fastmcp.prompts import prompt
 
-@mcp.prompt
+@prompt
 async def fetch_prompt(
     url: str = Field(description="Data source URL"),
-    ctx: Context,
+    ctx: Context = None,
 ) -> str:
     """Fetch data and create prompt"""
-    # Perform async operations
     return f"Analyze data from {url}"
 ```
 
@@ -301,9 +310,9 @@ async def fetch_prompt(
 ```python
 from pydantic import Field
 from fastmcp.prompts.prompt import PromptMessage, TextContent
-from src.core.app import mcp
+from fastmcp.prompts import prompt
 
-@mcp.prompt
+@prompt
 def structured_prompt(
     task: str = Field(description="Task description"),
 ) -> PromptMessage:
@@ -317,9 +326,9 @@ def structured_prompt(
 **Advanced with Metadata:**
 ```python
 from pydantic import Field
-from src.core.app import mcp
+from fastmcp.prompts import prompt
 
-@mcp.prompt(
+@prompt(
     name="custom_name",
     title="Human Readable Title",
     description="Custom description",
@@ -367,29 +376,36 @@ See [CLAUDE.md](CLAUDE.md) for comprehensive prompt generation documentation and
 
 ### Adding Middleware
 
-Create a file in `src/middleware/`:
+Middleware in FastMCP 3.x uses class-based middleware that extends the `Middleware` base class. Create a file in `src/middleware/` and register it in `src/core/server.py`:
 
 ```python
-from typing import Any, Callable
-from fastmcp import Context
-from src.core.app import mcp
+import mcp.types as mt
+from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
+from fastmcp.tools.tool import ToolResult
 
-@mcp.middleware()
-async def my_middleware(
-    ctx: Context,
-    next_handler: Callable,
-    *args: Any,
-    **kwargs: Any
-) -> Any:
-    # Pre-execution logic
-    result = await next_handler(*args, **kwargs)
-    # Post-execution logic
-    return result
+class MyMiddleware(Middleware):
+    async def on_call_tool(
+        self,
+        context: MiddlewareContext[mt.CallToolRequestParams],
+        call_next: CallNext[mt.CallToolRequestParams, ToolResult],
+    ) -> ToolResult:
+        # Pre-execution logic
+        result = await call_next(context)
+        # Post-execution logic
+        return result
 ```
 
-Middleware wraps tool execution to add cross-cutting concerns like logging, authentication, rate limiting, caching, etc.
+Middleware is passed to the `FastMCP` constructor in `src/core/server.py`:
 
-See `src/middleware/logging_middleware.py` for a working example and `src/middleware/auth_middleware.py` for a commented authentication pattern.
+```python
+from fastmcp.server.middleware.logging import LoggingMiddleware
+
+mcp = FastMCP(
+    name,
+    middleware=[LoggingMiddleware(), MyMiddleware()],
+    ...
+)
+```
 
 **Generator examples:**
 ```bash
@@ -481,7 +497,6 @@ fips-agents patch all --skip-confirmation
 - Example files in `src/*/examples/`
 
 **Asks before updating (shows diffs):**
-- `src/core/loaders.py` - Component discovery system
 - `src/core/server.py` - Server bootstrap code
 - `src/*/__ init__.py` - Package initialization files
 - `Makefile`, `Containerfile`, `openshift.yaml` - Build files
@@ -516,7 +531,7 @@ The `.template-info` file tracks which template version your project was created
 
 ## Transport Architecture
 
-MCP supports multiple transport protocols. **The server defines which transport to expose**—clients must connect using the matching transport type.
+MCP supports multiple transport protocols. **The server defines which transport to expose**--clients must connect using the matching transport type.
 
 ### How It Works
 
@@ -527,7 +542,7 @@ The `MCP_TRANSPORT` environment variable controls which transport the server run
 | `stdio` | Local development, CLI tools like `cmcp` | Spawns server as subprocess |
 | `http` | Remote access, OpenShift deployment | HTTP request to `http://host:port/mcp/` |
 
-The same codebase supports both transports. The server reads `MCP_TRANSPORT` at startup and exposes only that transport—there's no negotiation or auto-detection.
+The same codebase supports both transports. The server reads `MCP_TRANSPORT` at startup and exposes only that transport--there's no negotiation or auto-detection.
 
 ### Local Development (STDIO)
 
@@ -593,9 +608,15 @@ Your MCP client configuration must specify the correct transport:
 - `MCP_HTTP_PATH=/mcp/` - HTTP endpoint path
 
 ### Optional Authentication
+- `MCP_AUTH_JWT_ALG` - JWT algorithm (RS256, HS256, etc.)
 - `MCP_AUTH_JWT_SECRET` - JWT secret for symmetric signing
 - `MCP_AUTH_JWT_PUBLIC_KEY` - JWT public key for asymmetric
-- `MCP_REQUIRED_SCOPES` - Comma-separated required scopes
+- `MCP_AUTH_JWT_JWKS_URI` - JWKS endpoint URL
+- `MCP_AUTH_JWT_ISSUER` - Expected token issuer
+- `MCP_AUTH_JWT_AUDIENCE` - Expected token audience
+- `MCP_AUTH_REQUIRED_SCOPES` - Comma-separated required scopes
+- `MCP_AUTH_AUTHORIZATION_SERVERS` - Comma-separated authorization server URLs
+- `MCP_AUTH_BASE_URL` - This server's base URL for OAuth metadata
 
 ## Available Commands
 
@@ -610,12 +631,12 @@ make clean        # Clean up OpenShift deployment
 
 ## Architecture
 
-The server uses FastMCP 2.x with:
-- Dynamic component loading at startup
-- Hot-reload in development mode
-- Python decorator-based prompts with type safety
-- Automatic component registration via decorators (`@mcp.tool()`, `@mcp.resource()`, `@mcp.prompt()`, `@mcp.middleware()`)
-- Middleware for cross-cutting concerns
+The server uses [FastMCP 3.x](https://gofastmcp.com) with:
+- `FileSystemProvider` for automatic discovery of tools, resources, and prompts
+- Standalone decorators (`@tool`, `@resource`, `@prompt`) -- no shared server instance needed
+- Hot-reload via `FileSystemProvider(reload=True)` in development mode
+- Class-based middleware passed to the `FastMCP` constructor
+- Built-in `JWTVerifier` and `RemoteAuthProvider` for authentication
 - Generator system with Jinja2 templates for scaffolding
 - Support for both STDIO (local) and HTTP (OpenShift) transports
 

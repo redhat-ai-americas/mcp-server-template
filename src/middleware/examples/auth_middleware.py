@@ -11,7 +11,7 @@ import mcp.types as mt
 from fastmcp.tools.tool import ToolResult
 from fastmcp.exceptions import ToolError
 
-from core.logging import get_logger
+from src.core.logging import get_logger
 
 log = get_logger("middleware.auth")
 
@@ -22,7 +22,8 @@ class AuthMiddleware(Middleware):
     This is a commented example showing how to implement authentication
     middleware. To activate:
     1. Uncomment the implementation below
-    2. Add `mcp.add_middleware(AuthMiddleware())` to your loaders
+    2. Add AuthMiddleware() to the middleware=[] list in create_server()
+       (see src/core/server.py)
 
     Example authentication checks:
     - Verify JWT tokens from request headers
@@ -30,9 +31,9 @@ class AuthMiddleware(Middleware):
     - Validate API keys
     - Rate limiting per user
 
-    Example usage:
-        from src.middleware.auth_middleware import AuthMiddleware
-        mcp.add_middleware(AuthMiddleware())
+    Example usage in src/core/server.py:
+        from src.middleware.examples.auth_middleware import AuthMiddleware
+        middleware = [LoggingMiddleware(), AuthMiddleware()]
     """
 
     async def on_call_tool(
@@ -63,7 +64,7 @@ class AuthMiddleware(Middleware):
 
         # Example: Verify JWT token
         # try:
-        #     from core.auth import verify_jwt
+        #     from src.core.auth import verify_jwt
         #     token = auth_header.replace("Bearer ", "")
         #     claims = verify_jwt(token)
         #     # Attach user info to context if needed

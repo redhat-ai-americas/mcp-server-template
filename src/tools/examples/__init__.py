@@ -1,7 +1,9 @@
 """Example tools for reference and learning.
 
-These are sample implementations showing various FastMCP features.
+These are sample implementations showing FastMCP 3.x standalone decorator patterns.
 They are NOT automatically discovered or loaded by the MCP server.
+
+Tools use the standalone @tool decorator from fastmcp.tools instead of @mcp.tool.
 
 To use these examples:
 1. Copy the file to the parent directory (src/tools/)

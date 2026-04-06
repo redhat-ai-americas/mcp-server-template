@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-from src.core.server import UnifiedMCPServer
+"""Entry point for the MCP server."""
+
+from src.core.server import create_server, run_server
 
 
 def main() -> None:
-    server = UnifiedMCPServer()
-    server.load()
-    server.run()
+    mcp = create_server()
+    run_server(mcp)
 
 
 if __name__ == "__main__":

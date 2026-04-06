@@ -40,13 +40,13 @@ Update the test to cover:
 - Type validation if applicable
 
 **Testing Pattern Reminder:**
+FastMCP 3.x standalone decorators (`@tool`, `@resource`, `@prompt`) return the original function with metadata attached. Call decorated functions directly in tests:
 ```python
 from src.tools.my_tool import my_tool
-my_tool_fn = my_tool.fn  # Access underlying function
 
 @pytest.mark.asyncio
 async def test_my_tool():
-    result = await my_tool_fn(param="value")
+    result = await my_tool(param="value")
     assert result == "expected"
 ```
 

@@ -15,11 +15,11 @@ from dataclasses import dataclass
 from pydantic import Field
 from fastmcp import Context
 from fastmcp.exceptions import ToolError
-from ...core.app import mcp
+from fastmcp.tools import tool
 
 
 # Example 1: Field Validation
-@mcp.tool(
+@tool(
     annotations={
         "readOnlyHint": True,
         "idempotentHint": True,
@@ -47,7 +47,7 @@ async def process_data(
 
 
 # Example 2: Error Handling
-@mcp.tool(
+@tool(
     annotations={
         "readOnlyHint": True,
         "idempotentHint": True,
@@ -93,7 +93,7 @@ class AnalysisResult:
     unique_words: int
 
 
-@mcp.tool(
+@tool(
     annotations={
         "readOnlyHint": True,
         "idempotentHint": True,
@@ -147,7 +147,7 @@ async def analyze_text(
 
 
 # Example 4: Complex Validation with Literal Types
-@mcp.tool(
+@tool(
     annotations={
         "readOnlyHint": False,
         "idempotentHint": False,
@@ -186,7 +186,7 @@ async def configure_system(
 
 
 # Example 5: List Processing with Validation
-@mcp.tool(
+@tool(
     annotations={
         "readOnlyHint": True,
         "idempotentHint": True,
@@ -247,7 +247,7 @@ async def calculate_statistics(
 
 
 # Example 6: Optional Parameters with Smart Defaults
-@mcp.tool(
+@tool(
     annotations={
         "readOnlyHint": True,
         "idempotentHint": False,

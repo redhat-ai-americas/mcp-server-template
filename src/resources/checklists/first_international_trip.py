@@ -1,9 +1,9 @@
 """Travel checklist for first-time international travelers."""
 
-from ...core.app import mcp
+from fastmcp.resources import resource
 
 
-@mcp.resource(
+@resource(
     "travel-checklists://first-international-trip",
     mime_type="text/markdown",
     description="Comprehensive checklist for first-time international travelers",

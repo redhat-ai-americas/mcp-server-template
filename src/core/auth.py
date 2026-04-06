@@ -1,99 +1,87 @@
+"""Authentication configuration using FastMCP's built-in auth system.
+
+FastMCP 3.x provides JWTVerifier for token validation and RemoteAuthProvider
+for OAuth 2.0 Protected Resource metadata. Per-component scope checks use
+the `auth=require_scopes(...)` parameter on @tool/@resource/@prompt decorators.
+
+Environment variables:
+    MCP_AUTH_JWT_ALG: JWT algorithm (e.g., RS256, HS256)
+    MCP_AUTH_JWT_SECRET: Shared secret for HMAC algorithms (HS256/384/512)
+    MCP_AUTH_JWT_PUBLIC_KEY: Public key for RSA/EC algorithms
+    MCP_AUTH_JWT_JWKS_URI: JWKS endpoint URL (alternative to public_key)
+    MCP_AUTH_JWT_ISSUER: Expected token issuer
+    MCP_AUTH_JWT_AUDIENCE: Expected token audience
+    MCP_AUTH_REQUIRED_SCOPES: Comma-separated default required scopes
+    MCP_AUTH_AUTHORIZATION_SERVERS: Comma-separated authorization server URLs
+    MCP_AUTH_BASE_URL: This server's base URL for OAuth metadata
+
+Usage in components:
+    from fastmcp.server.auth import require_scopes
+    from fastmcp.tools import tool
+
+    @tool(auth=require_scopes("admin"))
+    def admin_only_tool() -> str:
+        return "secret data"
+"""
+
 import os
-import jwt
-from dataclasses import dataclass
-from fastmcp import Context
-from .logging import get_logger
+
+from src.core.logging import get_logger
 
 log = get_logger("auth")
 
 
-@dataclass
-class AllowedOrigins:
-    patterns: list[str]
-
-    @classmethod
-    def from_env(cls, key: str) -> "AllowedOrigins":
-        raw = os.getenv(key, "")
-        patterns = [p.strip() for p in raw.split(",") if p.strip()]
-        return cls(patterns)
-
-
-class BearerVerifier:
-    def __init__(
-        self,
-        alg: str | None = None,
-        secret: str | None = None,
-        public_key: str | None = None,
-    ) -> None:
-        self.alg = alg
-        self.secret = secret
-        self.public_key = public_key
-
-    @classmethod
-    def from_env(cls) -> "BearerVerifier | None":
-        alg = os.getenv("MCP_AUTH_JWT_ALG")
-        secret = os.getenv("MCP_AUTH_JWT_SECRET")
-        public_key = os.getenv("MCP_AUTH_JWT_PUBLIC_KEY")
-        if not alg or not (secret or public_key):
-            return None
-        return cls(alg=alg, secret=secret, public_key=public_key)
-
-    def verify(self, token: str) -> dict | None:
-        try:
-            if self.public_key:
-                return jwt.decode(token, self.public_key, algorithms=[self.alg])
-            return jwt.decode(token, self.secret, algorithms=[self.alg])
-        except Exception as e:
-            log.warning(f"JWT verify failed: {e}")
-            return None
-
-
-def _get_bearer_from_headers(headers: dict[str, str]) -> str | None:
-    auth = headers.get("authorization") or headers.get("Authorization")
-    if not auth:
-        return None
-    if not auth.lower().startswith("bearer "):
-        return None
-    return auth.split(" ", 1)[1].strip()
-
-
-def claims_from_ctx(ctx: Context) -> dict | None:  # best‑effort; HTTP transport only
-    try:
-        headers = getattr(getattr(ctx, "request", None), "headers", {}) or {}
-        token = _get_bearer_from_headers(headers)
-        verifier = BearerVerifier.from_env()
-        return verifier.verify(token) if (verifier and token) else None
-    except Exception:
+def configure_auth():
+    """Create an auth provider from environment variables, or None if not configured."""
+    alg = os.getenv("MCP_AUTH_JWT_ALG")
+    if not alg:
+        log.debug("No MCP_AUTH_JWT_ALG set; auth disabled")
         return None
 
+    secret = os.getenv("MCP_AUTH_JWT_SECRET")
+    public_key = os.getenv("MCP_AUTH_JWT_PUBLIC_KEY")
+    jwks_uri = os.getenv("MCP_AUTH_JWT_JWKS_URI")
 
-def requires_scopes(*scopes: str):
-    required = (
-        set(scopes)
-        if scopes
-        else set((os.getenv("MCP_REQUIRED_SCOPES", "").split(",")))
+    if not (secret or public_key or jwks_uri):
+        log.warning("MCP_AUTH_JWT_ALG set but no key/secret/JWKS URI provided; auth disabled")
+        return None
+
+    # Lazy import to avoid pulling in auth deps when auth is disabled
+    from fastmcp.server.auth import JWTVerifier, RemoteAuthProvider
+
+    issuer = os.getenv("MCP_AUTH_JWT_ISSUER")
+    audience = os.getenv("MCP_AUTH_JWT_AUDIENCE")
+    required_scopes_raw = os.getenv("MCP_AUTH_REQUIRED_SCOPES", "")
+    required_scopes = [s.strip() for s in required_scopes_raw.split(",") if s.strip()] or None
+
+    # For HMAC algorithms, the "secret" is passed as public_key
+    key = public_key or secret
+
+    verifier = JWTVerifier(
+        public_key=key,
+        jwks_uri=jwks_uri,
+        algorithm=alg,
+        issuer=issuer,
+        audience=audience,
+        required_scopes=required_scopes,
     )
-    required = {s.strip() for s in required if s.strip()}
 
-    def deco(fn):
-        async def wrapper(*args, **kwargs):
-            ctx = kwargs.get("ctx") or next(
-                (a for a in args if isinstance(a, Context)), None
-            )
-            if not ctx:
-                return {"error": "missing context for auth"}
-            claims = claims_from_ctx(ctx) or {}
-            token_scopes = set((claims.get("scope") or "").split()) | set(
-                claims.get("scopes", [])
-            )
-            if not required.issubset(token_scopes):
-                await ctx.error("Forbidden: missing required scopes")
-                return {
-                    "error": "forbidden",
-                    "missing": sorted(required - token_scopes),
-                }
-            return await fn(*args, **kwargs)
+    # If authorization server URLs are provided, wrap in RemoteAuthProvider
+    # for full OAuth 2.0 Protected Resource metadata (RFC 9728)
+    auth_servers_raw = os.getenv("MCP_AUTH_AUTHORIZATION_SERVERS")
+    base_url = os.getenv("MCP_AUTH_BASE_URL")
 
-        return wrapper
+    if auth_servers_raw and base_url:
+        auth_servers = [s.strip() for s in auth_servers_raw.split(",") if s.strip()]
+        auth = RemoteAuthProvider(
+            token_verifier=verifier,
+            authorization_servers=auth_servers,
+            base_url=base_url,
+        )
+        log.info(f"Auth enabled: JWTVerifier ({alg}) with RemoteAuthProvider")
+        return auth
 
-    return deco
+    # Without OAuth metadata, return the verifier directly
+    # Note: This works for simple JWT validation but won't advertise OAuth metadata
+    log.info(f"Auth enabled: JWTVerifier ({alg})")
+    return verifier
