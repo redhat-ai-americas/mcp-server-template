@@ -140,9 +140,3 @@ Templates can be:
 - **Versioned with your project** - Committed to git
 - **Shared across projects** - Copy to other projects
 - **Published as templates** - Fork and customize for your organization
-
-## See Also
-
-- [GENERATOR_PLAN.md](../GENERATOR_PLAN.md) - Comprehensive generator system documentation
-- [ARCHITECTURE.md](../ARCHITECTURE.md) - Project architecture overview
-- [CONTRIBUTING.md](../CONTRIBUTING.md) - Contributing guidelines
