@@ -1,0 +1,87 @@
+# fips-agents-cli template manifest.
+#
+# This file declares which paths in the MCP server template are managed
+# by the template (and so should be offered as patches by `fips-agents
+# patch`) and which belong to the user. The CLI reads this file from
+# the comparison root after cloning, before computing drift in
+# `fips-agents patch check`.
+#
+# When this file is absent, malformed, or declares an unsupported
+# schema_version, the CLI falls back to its hardcoded category set
+# keyed by template.type. See:
+#   https://github.com/fips-agents/fips-agents-cli/issues/45
+
+schema_version: 1
+
+patch:
+  categories:
+
+    generators:
+      description: Code generator templates (Jinja2)
+      patterns:
+        - .fips-agents-cli/generators/**/*
+      ask_before_patch: false
+
+    core:
+      description: Core infrastructure (server, auth, etc)
+      patterns:
+        - src/main.py
+        - src/core/server.py
+        - src/core/auth.py
+        - src/*/__init__.py
+        - conftest.py
+      ask_before_patch: true
+
+    docs:
+      description: Documentation and examples
+      patterns:
+        - docs/**/*
+        - "*/examples/**/*"
+        - AGENTS.md
+        - CLAUDE.md
+        - ARCHITECTURE.md
+        - CONTRIBUTING.md
+        - DEVELOPMENT_PROCESS.md
+        - OPENSHIFT_DEPLOYMENT.md
+        - TESTING.md
+      ask_before_patch: false
+
+    build:
+      description: Build and deployment files
+      patterns:
+        - Makefile
+        - Containerfile
+        - openshift.yaml
+        - deploy.sh
+        - remove_examples.sh
+        - .dockerignore
+        - .gitignore
+        - .gitleaks.toml
+      ask_before_patch: true
+
+    claude:
+      description: Claude Code slash commands shipped with the template
+      patterns:
+        - .claude/commands/**/*
+      ask_before_patch: false
+
+  never_patch:
+    # User-authored MCP components
+    - src/tools/*.py
+    - src/resources/*.py
+    - src/prompts/*.py
+    - src/middleware/*.py
+    # User customizations of core
+    - src/core/app.py
+    - src/core/auth.py
+    - src/core/logging.py
+    # Tests are user code
+    - tests/**/*.py
+    # Environment files
+    - .env*
+    # User's README, license, dependency declarations, repo settings
+    - README.md
+    - LICENSE
+    - pyproject.toml
+    - requirements.txt
+    - .github/**
